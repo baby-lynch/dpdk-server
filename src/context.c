@@ -48,16 +48,6 @@ void init_pqueue(void) {
         rte_exit(EXIT_FAILURE, "Cannot init priority queue\n");
     }
     global_pq = pq;
-
-    /*init output file of pqueue */
-    FILE *pq_out = NULL;
-    if ((pq_out = fopen("ppqq_out.txt", "w+")) == NULL) {
-        printf("Cannot open output file\n");
-    }
-    fprintf(pq_out,
-            "**************************************\
-                        Priority Queue\
-            **************************************\n");
 }
 
 pqueue_t *pqueue_get(void) {
@@ -68,7 +58,8 @@ pqueue_t *pqueue_get(void) {
 /*----------- Scheduler Ring -----------*/
 void sched_ring_init(void) {
     const char *name = "scheduler ring";
-    global_sched_ring = sched_ring_create(name, RING_BUF_SIZE);
+    global_sched_ring = rte_ring_create(name, RING_BUF_SIZE, rte_socket_id(),
+                                        RING_F_SP_ENQ | RING_F_SC_DEQ);
 }
 struct rte_ring *sched_ring_get(void) {
     assert(global_sched_ring);

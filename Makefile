@@ -2,7 +2,7 @@
 # Copyright(c) 2010-2014 Intel Corporation
 
 # binary name
-APP = main
+APP = dpdkserv
 
 # all source are stored in SRCS-y
 SRCS-y := src/main.c
@@ -10,10 +10,11 @@ SRCS-y += src/context.c
 SRCS-y += src/kni.c
 SRCS-y += src/ringbuffer.c 
 SRCS-y += src/debug.c
+SRCS-y += src/pqueue.c 
+SRCS-y += src/node.c
 
-SRCS-y += src/seasched/pqueue.c 
-SRCS-y += src/seasched/node.c
 SRCS-y += src/seasched/schedule.c
+SRCS-y += src/seasched/serve.c
 
 # includes
 CFLAGS += -Iinclude

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "debug.h"
 #include "pqueue.h"
 
 /*A wrapper for request packets to be inserted into priority queue */
@@ -25,5 +26,6 @@ size_t get_pos(void *a);
 
 void set_pos(void *a, size_t pos);
 
-void print_node(FILE *out, void *a);
+// void print_node(FILE *out, void *a);
+void print_node(void *a);
 #endif

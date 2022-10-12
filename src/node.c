@@ -19,7 +19,7 @@ void set_pos(void *a, size_t pos) {
     ((struct node *)a)->pos = pos;
 }
 
-void print_node(FILE *out, void *a) {
+void print_node(void *a) {
     struct node *nd = (struct node *)a;
     printf("\n+++++++++++++++ Node +++++++++++++++\n");
     printf("| Arrive Time: %lf\n", nd->arrive_time);

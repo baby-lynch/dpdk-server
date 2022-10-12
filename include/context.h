@@ -9,11 +9,24 @@
 #include <stdlib.h>
 
 #include "kni.h"
+#include "node.h"
+#include "pqueue.h"
 #include "ringbuffer.h"
-#include "seasched.h"
 #include "util.h"
 
-#define ETH_DEV_PORT_ID 0 /* specified port: port0 (ens162) */
+/* For LOG*/
+#define RTE_LOGTYPE_TX RTE_LOGTYPE_USER1
+#define RTE_LOGTYPE_RX RTE_LOGTYPE_USER1
+
+/* 5 lcores allocated for tasks*/
+uint16_t lcore_id_main;
+uint16_t lcore_id_rx;
+uint16_t lcore_id_tx;
+uint16_t lcore_id_schedule;
+uint16_t lcore_id_server;
+
+/* specified port: port0 (ens162) */
+#define ETH_DEV_PORT_ID 0
 
 #define RX_QUEUE_ID 0 /* use one rx queue only */
 #define TX_QUEUE_ID 0 /* use one tx queue only */

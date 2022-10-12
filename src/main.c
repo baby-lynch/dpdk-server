@@ -1,14 +1,16 @@
 #include <arpa/inet.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include "context.h"
 #include "kni.h"
 #include "ringbuffer.h"
-#include "seasched.h"
+#include "schedule.h"
+#include "serve.h"
 #include "util.h"
 
 #define DEBUG_OUT_PACKET 0
-#define DEBUG_IN_PACKET 1
+#define DEBUG_IN_PACKET 0
 
 static int promiscuous_on = 1; /* Port set in promiscuous mode off by default */
 
@@ -196,11 +198,9 @@ static __attribute__((noreturn)) int lcore_rx_action(__attribute__((unused)) voi
             struct rte_ether_hdr *ethdr = rte_pktmbuf_mtod(mbufs[i], struct rte_ether_hdr *);
             switch (rte_be_to_cpu_16(ethdr->ether_type)) {
                 case RTE_ETHER_TYPE_IPV6: {
-                    rte_ring_sp_enqueue(sched_ring_get(), (void *)mbufs[i]);
                     struct rte_ipv6_hdr *ip6hdr = rte_pktmbuf_mtod_offset(mbufs[i], struct rte_ipv6_hdr *, RTE_ETHER_HDR_LEN);
                     if (ip6hdr->proto == 0x99) {
-                        printf("seadp packet\n");
-                        // rte_ring_sp_enqueue(sched_ring_get(), (void *)mbufs[i]);
+                        rte_ring_sp_enqueue(sched_ring_get(), (void *)mbufs[i]);
                     } else {
                         rte_kni_tx_burst(kni_get(), &mbufs[i], 1);
                     }
@@ -248,8 +248,8 @@ static __attribute__((noreturn)) int lcore_tx_action(__attribute__((unused)) voi
 #endif
 
         int kni_nb_tx = rte_ring_sp_enqueue_burst(ring_buffer_get()->out, (void **)mbufs, kni_nb_rx, NULL);
-
-        for (int i = kni_nb_tx; i < kni_nb_rx; ++i) {
+        int i = kni_nb_tx;
+        for (; i < kni_nb_rx; ++i) {
             rte_pktmbuf_free(mbufs[i]);
         }
     }
@@ -274,6 +274,21 @@ static __attribute__((noreturn)) int lcore_schedule(__attribute__((unused)) void
 }
 
 /*
+ * lcore_rx_server do the following jobs:
+ * Deque packets from priority queue and echo them back
+ */
+static __attribute__((noreturn)) int lcore_server(__attribute__((unused)) void *arg) {
+    printf("[ server_thread ] is runing on slave core: %u\n ", rte_lcore_id());
+    while (1) {
+        struct node *pkt_node = (struct node *)pqueue_pop(pqueue_get());
+        if (NULL != pkt_node) {
+            continue;
+        } else {
+            serve(pkt_node);
+        }
+    }
+}
+/*
  * lcore_main do the following jobs:
  * 1.Retrieve packets from NIC rx queue and enqueue them to Ring Buffer
  *   Packet in flow: rx queue ---> rx_mbufs ---> ringbuffer->in
@@ -281,20 +296,24 @@ static __attribute__((noreturn)) int lcore_schedule(__attribute__((unused)) void
  *   Packet out flow: ringbuffer->out ---> tx_mbufs ---> tx queue
  */
 static __attribute__((noreturn)) void lcore_main(void) {
-    uint16_t lcore_id = rte_get_main_lcore();
-    printf("[ main thread ] is runing on master core: %u\n ", lcore_id);
+    lcore_id_main = rte_get_main_lcore();
+    printf("[ main thread ] is runing on master core: %u\n ", lcore_id_main);
 
     /* Launch a slave core for packet receiving */
-    lcore_id = rte_get_next_lcore(lcore_id, 1, 0);
-    rte_eal_remote_launch(lcore_rx_action, NULL, rte_get_next_lcore(lcore_id, 1, 0));
+    lcore_id_rx = rte_get_next_lcore(lcore_id_main, 1, 0);
+    rte_eal_remote_launch(lcore_rx_action, NULL, rte_get_next_lcore(lcore_id_rx, 1, 0));
 
     /* Launch a slave core for packet sending */
-    lcore_id = rte_get_next_lcore(lcore_id, 1, 0);
-    rte_eal_remote_launch(lcore_tx_action, NULL, rte_get_next_lcore(lcore_id, 1, 0));
+    lcore_id_tx = rte_get_next_lcore(lcore_id_rx, 1, 0);
+    rte_eal_remote_launch(lcore_tx_action, NULL, rte_get_next_lcore(lcore_id_tx, 1, 0));
 
     /* Launch a slave core for packet scheduling */
-    lcore_id = rte_get_next_lcore(lcore_id, 1, 0);
-    rte_eal_remote_launch(lcore_schedule, NULL, rte_get_next_lcore(lcore_id, 1, 0));
+    lcore_id_schedule = rte_get_next_lcore(lcore_id_tx, 1, 0);
+    rte_eal_remote_launch(lcore_schedule, NULL, rte_get_next_lcore(lcore_id_schedule, 1, 0));
+
+    /* Launch a slave core for packet serving */
+    lcore_id_server = rte_get_next_lcore(lcore_id_schedule, 1, 0);
+    rte_eal_remote_launch(lcore_schedule, NULL, rte_get_next_lcore(lcore_id_server, 1, 0));
 
     while (1) {
         // RX
@@ -315,7 +334,8 @@ static __attribute__((noreturn)) void lcore_main(void) {
         if (nr_send > 0) {
             rte_eth_tx_burst(ETH_DEV_PORT_ID, TX_QUEUE_ID, tx_mbufs, nr_send);
             /* traffic_policer for traffic shaping */
-            for (uint16_t i = 0; i < nr_send; i++) {
+            uint16_t i = 0;
+            for (; i < nr_send; i++) {
                 rte_pktmbuf_free(tx_mbufs[i]);
             }
         }
@@ -368,6 +388,51 @@ int main(int argc, char *argv[]) {
 
     /* Call lcore main */
     lcore_main();
+
+    /* Wait for all lcores to finish up */
+    rte_eal_mp_wait_lcore();
+
+    /* print stats after rx,tx queue is flushed */
+    struct rte_eth_stats stats;
+    rte_delay_ms(1000);
+    if (rte_eth_stats_get(ETH_DEV_PORT_ID, &stats) == 0) {
+        RTE_LOG(INFO, TX,
+                "\t[lcore%u] TX Statistics port[%u].txq[%u]:\n"
+                "\ttotal out packets = %lu;\n"
+                "\ttotal out bytes = %lu;\n"
+                "\ttotal out errors = %lu;\n"
+                "\ttxq[%u] out packets = %lu;\n"
+                "\ttxq[%u] out bytes = %lu;\n"
+                "\ttxq[%u] out errors = %lu;\n",
+                lcore_id_tx, ETH_DEV_PORT_ID, 0,
+                stats.opackets,
+                stats.obytes,
+                stats.oerrors,
+                0, stats.q_opackets[0],
+                0, stats.q_obytes[0],
+                0, stats.q_errors[0]);
+    }
+    if (rte_eth_stats_get(ETH_DEV_PORT_ID, &stats) == 0) {
+        RTE_LOG(INFO, RX,
+                "\t[lcore%u] RX Statistics port[%u].rxq[%u]:\n"
+                "\ttotal in packets = %lu;\n"
+                "\ttotal in bytes = %lu;\n"
+                "\ttotal in missed = %lu;\n"
+                "\ttotal in errors = %lu;\n"
+                "\ttotal mbuf alloc failures = %lu;\n"
+                "\trxq[%u] in packets = %lu;\n"
+                "\trxq[%u] in bytes = %lu;\n"
+                "\trxq[%u] in errors = %lu;\n",
+                lcore_id_tx, ETH_DEV_PORT_ID, 0,
+                stats.ipackets,
+                stats.ibytes,
+                stats.imissed,
+                stats.ierrors,
+                stats.rx_nombuf,
+                0, stats.q_ipackets[0],
+                0, stats.q_ibytes[0],
+                0, stats.q_errors[0]);
+    }
 
     /* Clean up the EAL */
     rte_eal_cleanup();

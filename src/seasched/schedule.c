@@ -1,8 +1,4 @@
-#include <rte_mbuf.h>
-
-#include "context.h"
-#include "seasched.h"
-#include "util.h"
+#include "schedule.h"
 
 static double ALPHA = 2.0;
 
@@ -39,15 +35,5 @@ int schedule(void *arg) {
         printf("packet enter priority queue failed !");
         return -1;
     }
-    // printf("\n+++++++++++++++ Node +++++++++++++++\n");
-    // printf("| Arrive Time: %lf\n", pkt_node->arrive_time);
-    // printf("| Cost: %lf\n", pkt_node->cost);
-    // printf("| Priority: %lf\n", pkt_node->pri);
-    // printf("++++++++++++++++++++++++++++++++++++\n");
-    FILE *pq_out = NULL;
-    if ((pq_out = fopen("pq_out.txt", "w+")) == NULL) {
-        printf("Cannot open output file\n");
-    }
-    print_node(pq_out, pkt_node);
     return 0;
 }

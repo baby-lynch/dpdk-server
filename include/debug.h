@@ -9,13 +9,16 @@
 #include <rte_tcp.h>
 #include <rte_udp.h>
 
-#include "seasched.h"
+#include "seanet.h"
 
 /*--------------------- debug in/out packet ---------------------*/
 void dump_packet(void *arg);
-void dump_arp_packet(void *arg);
-void dump_ipv4_packet(void *arg);
-void dump_ipv6_packet(void *arg);
+void dump_arp(void *arg);
+void dump_ipv4(void *arg);
+void dump_ipv6(void *arg);
+
+void dump_eid(void *arg);
+void dump_seadp(void *arg);
 
 /*--------------------- debug priority queue ---------------------*/
 

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-APP=main
+APP=dpdkserv
 
 case "$1" in
-"-d") sudo gdb ./build/${APP} -l 3-7 ;;
-"") sudo ./build/${APP} -l 3-7 ;;
+"-d") sudo gdb ./build/${APP} --file-prefix app2 -l 25-31 ;;
+"") sudo ./build/${APP} --file-prefix app2 -l 25-31 ;;
 esac
